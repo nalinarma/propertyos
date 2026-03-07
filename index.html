@@ -849,10 +849,13 @@ const PROP_COLORS = [
   ["#1a3a2a","#4ade80"],
 ];
 
+// ── Supabase config ──────────────────────────────────────────────
+const SUPA_URL = "https://ekacheyphfsrzewdkgyh.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrYWNoZXlwaGZzcnpld2RrZ3loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI4NzA0MjEsImV4cCI6MjA4ODQ0NjQyMX0.p9KXE3XYnzs3YKIOvXzdFsbUBJOpEEK2EI3-a2IdjU0";
+
 let data = JSON.parse(localStorage.getItem("propertyos") || "null");
 
 if (!data) {
-  // Seed data
   data = {
     properties: [
       { id: "p1", name: "My Apartment Building", address: "Enter address here", totalUnits: 3, type: "Apartment Complex", notes: "" },
@@ -864,19 +867,61 @@ if (!data) {
       {id:"u3",propId:"p1",num:"Apt 3",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
       {id:"u4",propId:"p2",num:"Unit 1",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
     ],
-    tenants: [],
-    payments: [],
-    expenses: [],
-    maintenance: [],
-    activity: [],
-    apt510: {},  // { "2024": [{id, guest, in, out, price}], ... }
-    apt510expenses: {}  // { "2024": { rent: 0, utilities: 0, ... } }
+    tenants: [], payments: [], expenses: [], maintenance: [], activity: [],
+    apt510: {}, apt510expenses: {}
   };
-  save();
 }
 
+// ── Sync toast ───────────────────────────────────────────────────
+function showSync(icon, msg) {
+  let el = document.getElementById("_sync_toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "_sync_toast";
+    el.style.cssText = "position:fixed;bottom:20px;right:20px;background:#fff;border:1px solid #e0ddd6;border-radius:50px;padding:8px 18px;font-size:.8rem;font-weight:600;color:#1a1916;z-index:9999;display:flex;align-items:center;gap:7px;box-shadow:0 4px 20px rgba(0,0,0,.12);transition:opacity .3s;";
+    document.body.appendChild(el);
+  }
+  el.style.opacity = "1";
+  el.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = "0"; }, 2500);
+}
+
+let _saveTimer = null;
 function save() {
   localStorage.setItem("propertyos", JSON.stringify(data));
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(cloudSave, 700);
+}
+
+async function cloudSave() {
+  showSync("⏳", "Saving…");
+  try {
+    await fetch(`${SUPA_URL}/rest/v1/propertyos_data?id=eq.main`, {
+      method: "PATCH",
+      headers: {
+        "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal"
+      },
+      body: JSON.stringify({ data, updated_at: new Date().toISOString() })
+    });
+    showSync("✅", "Saved!");
+  } catch(e) { showSync("⚠️", "Offline – saved locally"); }
+}
+
+async function cloudLoad() {
+  showSync("⏳", "Loading…");
+  try {
+    const res = await fetch(`${SUPA_URL}/rest/v1/propertyos_data?id=eq.main&select=data`, {
+      headers: { "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` }
+    });
+    const rows = await res.json();
+    if (rows && rows[0] && rows[0].data && rows[0].data.properties) {
+      data = rows[0].data;
+      localStorage.setItem("propertyos", JSON.stringify(data));
+      showSync("✅", "Loaded!");
+    }
+  } catch(e) { showSync("⚠️", "Using local data"); }
 }
 
 // ─── NAV ──────────────────────────────────────────────────────────────────────
@@ -2365,9 +2410,8 @@ function render510Report(type) {
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-// Set today's date as default for date inputs
 document.querySelectorAll('input[type=date]').forEach(i => i.value = todayStr());
-renderAll();
+cloudLoad().then(() => renderAll());
 </script>
 </body>
 </html>
