@@ -1914,11 +1914,12 @@ function save510Booking() {
   if (inYear === outYear) {
     year = String(inYear);
   } else {
-    // Count nights in each year (a night belongs to the year its start-day falls in)
-    const jan1Next = new Date(inYear + 1 + "-01-01T00:00:00");
+    // Count nights in each year — assign to the year with MORE nights.
+    // On a tie, assign to the later year (e.g. 4 nights each → goes to Jan year).
+    const jan1Next = new Date((inYear + 1) + "-01-01T00:00:00");
     const nightsInFirst  = Math.round((jan1Next - inDate)  / 86400000);
     const nightsInSecond = Math.round((outDate  - jan1Next) / 86400000);
-    year = String(nightsInFirst >= nightsInSecond ? inYear : outYear);
+    year = String(nightsInFirst > nightsInSecond ? inYear : outYear);
   }
   if (!data.apt510) data.apt510 = {};
   if (!data.apt510[year]) data.apt510[year] = [];
