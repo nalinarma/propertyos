@@ -1727,6 +1727,24 @@ function exportToExcel() {
   const rentGridRows = Object.entries(data.rentGrid || {}).map(([key, val]) => ({ Key: key, Amount: val }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rentGridRows.length ? rentGridRows : [{}]), "RentGrid");
 
+  // Apt510 Bookings sheet — all years
+  const apt510Rows = [];
+  Object.entries(data.apt510 || {}).forEach(([year, bookings]) => {
+    (bookings || []).forEach(b => {
+      apt510Rows.push({ Year: year, ID: b.id, Guest: b.guest, CheckIn: b.in, CheckOut: b.out, Price: b.price, Notes: b.notes || "", Platform: b.platform || "" });
+    });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(apt510Rows.length ? apt510Rows : [{}]), "Apt510Bookings");
+
+  // Apt510 Expenses sheet — all years
+  const apt510ExpRows = [];
+  Object.entries(data.apt510expenses || {}).forEach(([year, expObj]) => {
+    Object.entries(expObj || {}).forEach(([key, val]) => {
+      apt510ExpRows.push({ Year: year, Key: key, Amount: val });
+    });
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(apt510ExpRows.length ? apt510ExpRows : [{}]), "Apt510Expenses");
+
   const date = new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, `PropertyOS-Backup-${date}.xlsx`);
 }
@@ -1793,10 +1811,28 @@ function importFromExcel(event) {
       const rentGrid = {};
       rentGridRaw.forEach(r => { if (r.Key && r.Amount) rentGrid[r.Key] = Number(r.Amount); });
 
-      data = { properties: props, units, tenants, payments, expenses, maintenance, activity: data.activity || [], rentGrid, apt510: data.apt510 || {} };
+      // Restore Apt510 bookings
+      const apt510 = {};
+      getSheet("Apt510Bookings").forEach(r => {
+        const year = String(r.Year || "");
+        if (!year) return;
+        if (!apt510[year]) apt510[year] = [];
+        apt510[year].push({ id: String(r.ID || ""), guest: r.Guest || "", in: r.CheckIn || "", out: r.CheckOut || "", price: Number(r.Price) || 0, notes: r.Notes || "", platform: r.Platform || "" });
+      });
+
+      // Restore Apt510 expenses
+      const apt510expenses = {};
+      getSheet("Apt510Expenses").forEach(r => {
+        const year = String(r.Year || "");
+        if (!year || !r.Key) return;
+        if (!apt510expenses[year]) apt510expenses[year] = {};
+        apt510expenses[year][r.Key] = Number(r.Amount) || 0;
+      });
+
+      data = { properties: props, units, tenants, payments, expenses, maintenance, activity: data.activity || [], rentGrid, apt510, apt510expenses };
       save();
       renderAll();
-      alert(`✅ Restored successfully!\n${props.length} properties, ${units.length} units, ${tenants.length} tenants loaded.`);
+      alert(`✅ Restored successfully!\n${props.length} properties, ${units.length} units, ${tenants.length} tenants, ${apt510Rows.length} STR bookings loaded.`);
     } catch(err) {
       alert("Failed to read file. Make sure it's a valid PropertyOS Excel backup.\n\nError: " + err.message);
     }
