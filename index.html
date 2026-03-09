@@ -1706,11 +1706,17 @@ function exportToExcel() {
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tenantRows.length ? tenantRows : [{}]), "Tenants");
 
-  // Payments sheet
+  // Payments sheet — export Date as text string to prevent Excel from converting to serial numbers
   const payRows = data.payments.map(p => ({
-    ID: p.id, TenantID: p.tenantId, Amount: p.amount, Date: p.date, Method: p.method, Notes: p.notes || ""
+    ID: String(p.id || ""), TenantID: String(p.tenantId || ""), Amount: p.amount,
+    Date: String(p.date || ""), Method: p.method || "", Notes: p.notes || ""
   }));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows.length ? payRows : [{}]), "Payments");
+  const payWs = XLSX.utils.json_to_sheet(payRows.length ? payRows : [{}]);
+  payRows.forEach((_, i) => {
+    const cell = payWs[XLSX.utils.encode_cell({r: i+1, c: 3})];
+    if (cell) { cell.t = 's'; delete cell.z; }
+  });
+  XLSX.utils.book_append_sheet(wb, payWs, "Payments");
 
   // Expenses sheet
   const expRows = data.expenses.map(e => ({
@@ -1734,7 +1740,16 @@ function exportToExcel() {
   const apt510Rows = [];
   Object.entries(data.apt510 || {}).forEach(([year, bookings]) => {
     (bookings || []).forEach(b => {
-      apt510Rows.push({ Year: year, ID: b.id, Guest: b.guest, CheckIn: b.in, CheckOut: b.out, Price: b.price, Notes: b.notes || "", Platform: b.platform || "" });
+      apt510Rows.push({
+        Year: year, ID: b.id, Guest: b.guest, CheckIn: b.in, CheckOut: b.out, Price: b.price,
+        Notes: b.notes || "", Platform: b.platform || "",
+        Pay1Amount: (b.pay1 && b.pay1.amount) || 0,
+        Pay1Method: (b.pay1 && b.pay1.method) || "",
+        Pay1Notes: (b.pay1 && b.pay1.notes) || "",
+        Pay2Amount: (b.pay2 && b.pay2.amount) || 0,
+        Pay2Method: (b.pay2 && b.pay2.method) || "",
+        Pay2Notes: (b.pay2 && b.pay2.notes) || ""
+      });
     });
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(apt510Rows.length ? apt510Rows : [{}]), "Apt510Bookings");
@@ -1790,21 +1805,31 @@ function importFromExcel(event) {
 
       const payments = getSheet("Payments").map(r => ({
         id: String(r.ID || ""), tenantId: String(r.TenantID || ""),
-        amount: Number(r.Amount) || 0, date: r.Date || "",
+        amount: Number(r.Amount) || 0,
+        date: (typeof r.Date === "number")
+          ? (() => { const d = new Date(Math.round((r.Date - 25569) * 86400 * 1000)); return d.toISOString().split("T")[0]; })()
+          : String(r.Date || ""),
         method: r.Method || "", notes: r.Notes || ""
       })).filter(p => p.id && p.tenantId);
 
       const expenses = getSheet("Expenses").map(r => ({
         id: String(r.ID || ""), propId: String(r.PropertyID || ""),
         category: r.Category || "", desc: r.Description || "",
-        amount: Number(r.Amount) || 0, date: r.Date || "", vendor: r.Vendor || ""
+        amount: Number(r.Amount) || 0,
+        date: (typeof r.Date === "number")
+          ? (() => { const d = new Date(Math.round((r.Date - 25569) * 86400 * 1000)); return d.toISOString().split("T")[0]; })()
+          : String(r.Date || ""),
+        vendor: r.Vendor || ""
       })).filter(e => e.id && e.propId);
 
       const maintenance = getSheet("Maintenance").map(r => ({
         id: String(r.ID || ""), propId: String(r.PropertyID || ""),
         unit: String(r.Unit || ""), issue: r.Issue || "",
         priority: r.Priority || "Medium", status: r.Status || "open",
-        date: r.Date || "", assigned: r.AssignedTo || ""
+        date: (typeof r.Date === "number")
+          ? (() => { const d = new Date(Math.round((r.Date - 25569) * 86400 * 1000)); return d.toISOString().split("T")[0]; })()
+          : String(r.Date || ""),
+        assigned: r.AssignedTo || ""
       })).filter(m => m.id && m.propId);
 
       if (props.length === 0) { alert("No valid properties found in the file. Make sure you're uploading a PropertyOS backup."); return; }
@@ -1820,7 +1845,12 @@ function importFromExcel(event) {
         const year = String(r.Year || "");
         if (!year) return;
         if (!apt510[year]) apt510[year] = [];
-        apt510[year].push({ id: String(r.ID || ""), guest: r.Guest || "", in: r.CheckIn || "", out: r.CheckOut || "", price: Number(r.Price) || 0, notes: r.Notes || "", platform: r.Platform || "" });
+        apt510[year].push({
+          id: String(r.ID || ""), guest: r.Guest || "", in: r.CheckIn || "", out: r.CheckOut || "",
+          price: Number(r.Price) || 0, notes: r.Notes || "", platform: r.Platform || "",
+          pay1: { amount: Number(r.Pay1Amount) || 0, method: r.Pay1Method || "", notes: r.Pay1Notes || "" },
+          pay2: { amount: Number(r.Pay2Amount) || 0, method: r.Pay2Method || "", notes: r.Pay2Notes || "" }
+        });
       });
 
       // Restore Apt510 expenses
