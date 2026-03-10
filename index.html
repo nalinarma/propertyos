@@ -5,7 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Alpha</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function() {
+  function loadScript(src, cb) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.onload = cb;
+    s.onerror = cb;
+    document.head.appendChild(s);
+  }
+  var primary = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  var fallback = 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js';
+  loadScript(primary, function() {
+    if (typeof XLSX === 'undefined') {
+      loadScript(fallback, function() {
+        if (typeof XLSX === 'undefined') {
+          console.error('XLSX library could not be loaded.');
+        }
+      });
+    }
+  });
+})();
+</script>
 <style>
 :root {
   --bg: #ffffff;
@@ -1266,6 +1287,10 @@ function openAgentList() {
 
 // ══════════ EXPORT TO EXCEL (3 TABS: Deals Control, Expense Control, Accounting) ══════════
 function exportToExcel() {
+  if (typeof XLSX === 'undefined') {
+    alert('The Excel library is still loading. Please wait a moment and try again.');
+    return;
+  }
   const wb = XLSX.utils.book_new();
 
   // ── HELPER: apply column widths ──
@@ -1471,6 +1496,10 @@ function exportToExcel() {
 
 // ══════════ BACKUP / RESTORE ══════════
 function exportData() {
+  if (typeof XLSX === 'undefined') {
+    alert('The Excel library is still loading. Please wait a moment and try again.');
+    return;
+  }
   const wb = XLSX.utils.book_new();
 
   // Deals
