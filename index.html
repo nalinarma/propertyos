@@ -274,12 +274,15 @@ select option { background: var(--surface); color: var(--text); }
     <button class="nav-item" onclick="showView('properties')">
       <span class="nav-icon">🏢</span> Properties
     </button>
+    <button class="nav-item" id="nav-prop-561" onclick="openPropertyByName('561')" style="padding-left:24px;font-size:.82rem;">
+      <span class="nav-icon">🏠</span> 561
+    </button>
+    <button class="nav-item" id="nav-prop-1595" onclick="openPropertyByName('1595')" style="padding-left:24px;font-size:.82rem;">
+      <span class="nav-icon">🏠</span> 1595
+    </button>
     <div class="nav-section">Finance</div>
     <button class="nav-item" onclick="showView('rent')">
-      <span class="nav-icon">💰</span> Rent Payments
-    </button>
-    <button class="nav-item" onclick="showView('expenses')">
-      <span class="nav-icon">📋</span> Expenses
+      <span class="nav-icon">💰</span> Rent Collection
     </button>
     <div class="nav-section">Operations</div>
     <button class="nav-item" onclick="showView('maintenance')">
@@ -310,7 +313,10 @@ select option { background: var(--surface); color: var(--text); }
         <div class="page-title">Good morning 👋</div>
         <div class="page-sub">Here's what's happening across your properties</div>
       </div>
-      <button class="btn btn-primary" onclick="openModal('modal-add-tenant')">+ Add Tenant</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button class="btn btn-ghost" onclick="exportToExcel()" style="display:flex;align-items:center;gap:6px;">📊 Export to Excel</button>
+        <button class="btn btn-primary" onclick="openModal('modal-add-tenant')">+ Add Tenant</button>
+      </div>
     </div>
 
     <!-- Backup / Restore bar -->
@@ -426,7 +432,7 @@ select option { background: var(--surface); color: var(--text); }
   <div id="view-rent" class="view">
     <div class="topbar">
       <div>
-        <div class="page-title">Rent Payments</div>
+        <div class="page-title">Rent Collection</div>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
@@ -841,7 +847,98 @@ select option { background: var(--surface); color: var(--text); }
   </div>
 </div>
 
+<!-- Property Units Modal -->
+<div class="modal-bg" id="modal-property-units">
+  <div class="modal" style="max-width:520px;width:95%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <div class="modal-title" id="prop-units-modal-title" style="margin-bottom:0;">Property Units</div>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-property-units')">✕</button>
+    </div>
+    <div id="prop-units-modal-list"></div>
+    <div class="form-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" id="prop-units-add-tenant-btn" onclick="openAddTenantFromModal()">+ Add Tenant</button>
+    </div>
+  </div>
+</div>
+
 <script>
+function openPropertyUnitsModal(propId) {
+  const prop = data.properties.find(p => p.id === propId);
+  if (!prop) return;
+  window._unitModalPropId = propId;
+
+  document.getElementById('prop-units-modal-title').textContent = prop.name + ' — Units';
+
+  const units = data.units.filter(u => u.propId === propId);
+  const thisMonth = new Date().toISOString().substring(0, 7);
+  const paidIds = new Set(data.payments.filter(p => p.date && p.date.startsWith(thisMonth)).map(p => p.tenantId));
+
+  const list = document.getElementById('prop-units-modal-list');
+  if (units.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:var(--muted);padding:20px;">No units found.</div>`;
+  } else {
+    list.innerHTML = units.map(u => {
+      const tenant = data.tenants.find(t => t.propId === propId && t.unit === u.num);
+      if (!tenant) {
+        return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface2);border-radius:12px;margin-bottom:8px;">
+          <div style="width:44px;height:44px;border-radius:10px;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0;">🔑</div>
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:.95rem;">${u.num}</div>
+            <span class="status status-vacant" style="margin-top:4px;display:inline-flex;">Vacant</span>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="openAddTenantForUnit('${propId}','${u.num}')">+ Add Tenant</button>
+        </div>`;
+      }
+      const paid = paidIds.has(tenant.id);
+      return `<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:var(--surface2);border-radius:12px;margin-bottom:8px;">
+        <div style="width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-family:'DM Serif Display',serif;font-size:1.1rem;color:#111;flex-shrink:0;">${tenant.fname[0]}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:.95rem;">${u.num}</div>
+          <div style="font-size:.8rem;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${tenant.fname} ${tenant.lname}</div>
+          <div style="display:flex;gap:8px;margin-top:4px;align-items:center;">
+            <span class="status status-occupied" style="font-size:.68rem;">Occupied</span>
+            <span class="status status-${paid ? 'paid' : 'late'}" style="font-size:.68rem;">${paid ? '✓ Paid' : '⚠ Unpaid'}</span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-weight:600;color:var(--accent);font-size:.9rem;">${fmtMoney(tenant.rent)}/mo</div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="openEditTenant('${tenant.id}');closeModal('modal-property-units')">✏️ Edit</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('modal-property-units').classList.add('open');
+}
+
+function openAddTenantForUnit(propId, unitNum) {
+  closeModal('modal-property-units');
+  populateSelects();
+  const sel = document.getElementById('t-prop');
+  if (sel) sel.value = propId;
+  const unitInput = document.getElementById('t-unit');
+  if (unitInput) unitInput.value = unitNum;
+  document.getElementById('modal-add-tenant').classList.add('open');
+}
+
+function openAddTenantFromModal() {
+  const propId = window._unitModalPropId;
+  closeModal('modal-property-units');
+  populateSelects();
+  const sel = document.getElementById('t-prop');
+  if (sel && propId) sel.value = propId;
+  document.getElementById('modal-add-tenant').classList.add('open');
+}
+
+function openPropertyByName(name) {
+  const prop = data.properties.find(p => p.name === name);
+  if (prop) {
+    openPropertyDetail(prop.id);
+  } else {
+    showView('properties');
+  }
+}
+
 // ─── DATA STORE ───────────────────────────────────────────────────────────────
 const PROP_COLORS = [
   ["#1a2a4a","#4D96FF"],
@@ -855,22 +952,61 @@ const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let data = JSON.parse(localStorage.getItem("propertyos") || "null");
 
-if (!data) {
-  data = {
-    properties: [
-      { id: "p1", name: "My Apartment Building", address: "Enter address here", totalUnits: 3, type: "Apartment Complex", notes: "" },
-      { id: "p2", name: "My Single Unit", address: "Enter address here", totalUnits: 1, type: "Single Family", notes: "" },
-    ],
-    units: [
-      {id:"u1",propId:"p1",num:"Apt 1",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
-      {id:"u2",propId:"p1",num:"Apt 2",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
-      {id:"u3",propId:"p1",num:"Apt 3",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
-      {id:"u4",propId:"p2",num:"Unit 1",beds:"2",baths:"1",sqft:0,rent:0,status:"vacant"},
-    ],
-    tenants: [], payments: [], expenses: [], maintenance: [], activity: [],
-    apt510: {}, apt510expenses: {}
+function fixUnits() {
+  if (!data) {
+    data = {
+      properties: [
+        { id: "p1", name: "561", address: "561 Enter Address Here", totalUnits: 3, type: "Apartment Complex", notes: "" },
+        { id: "p2", name: "1595", address: "1595 Lexington Ave", totalUnits: 1, type: "Apartment Complex", notes: "" },
+      ],
+      units: [],
+      tenants: [], payments: [], expenses: [], maintenance: [], activity: [],
+      apt510: {}, apt510expenses: {}
+    };
+  }
+
+  // Ensure properties 561 and 1595 exist, get their actual IDs
+  let prop561 = data.properties.find(p => p.name === "561");
+  if (!prop561) {
+    prop561 = { id: "p1", name: "561", address: "561 Enter Address Here", totalUnits: 3, type: "Apartment Complex", notes: "" };
+    data.properties.unshift(prop561);
+  }
+  let prop1595 = data.properties.find(p => p.name === "1595");
+  if (!prop1595) {
+    prop1595 = { id: "p2", name: "1595", address: "1595 Lexington Ave", totalUnits: 1, type: "Apartment Complex", notes: "" };
+    data.properties.push(prop1595);
+  }
+
+  const id561  = prop561.id;
+  const id1595 = prop1595.id;
+
+  // Rename tenant unit references from old names
+  const unitRemap = {
+    "1":"561-1","Apt 1":"561-1",
+    "2R":"561-2R","Apt 2R":"561-2R","Apt 2":"561-2R",
+    "2L":"561-2L","Apt 2L":"561-2L","Apt 3":"561-2L",
+    "1595 Lexington #3B":"1595-3B","Unit 1":"1595-3B","3B":"1595-3B","Apt 3B":"1595-3B"
   };
+  (data.tenants||[]).forEach(t => { if (unitRemap[t.unit]) t.unit = unitRemap[t.unit]; });
+
+  // Always set units to the exact canonical list using real property IDs
+  data.units = [
+    { id:"u1", propId:id561,  num:"561-1",   beds:"2", baths:"1", sqft:0, rent:0, status:"vacant" },
+    { id:"u2", propId:id561,  num:"561-2R",  beds:"2", baths:"1", sqft:0, rent:0, status:"vacant" },
+    { id:"u3", propId:id561,  num:"561-2L",  beds:"2", baths:"1", sqft:0, rent:0, status:"vacant" },
+    { id:"u4", propId:id1595, num:"1595-3B", beds:"2", baths:"1", sqft:0, rent:0, status:"vacant" },
+  ];
+
+  // Restore occupied status and rent from active tenants
+  (data.tenants||[]).forEach(t => {
+    const u = data.units.find(u => u.propId === t.propId && u.num === t.unit);
+    if (u) { u.status = "occupied"; u.rent = t.rent || 0; }
+  });
+
+  localStorage.setItem("propertyos", JSON.stringify(data));
 }
+
+fixUnits();
 
 // ── Sync toast ───────────────────────────────────────────────────
 function showSync(icon, msg) {
@@ -922,6 +1058,9 @@ async function cloudLoad() {
       showSync("✅", "Loaded!");
     }
   } catch(e) { showSync("⚠️", "Using local data"); }
+  // Always fix units after any load (local or cloud), then push corrected data back
+  fixUnits();
+  cloudSave();
 }
 
 // ─── NAV ──────────────────────────────────────────────────────────────────────
@@ -1147,7 +1286,7 @@ function renderDashboard() {
     }).reduce((s, pay) => s + pay.amount, 0);
     const pct = units.length ? Math.round(occ / units.length * 100) : 0;
     const [bg, accent] = PROP_COLORS[i % PROP_COLORS.length];
-    return `<div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface2);border-radius:12px;margin-bottom:8px;cursor:pointer;" onclick="showView('properties')">
+    return `<div style="display:flex;align-items:center;gap:14px;padding:12px;background:var(--surface2);border-radius:12px;margin-bottom:8px;cursor:pointer;" onclick="openPropertyDetail('${p.id}')">
       <div style="width:40px;height:40px;border-radius:10px;background:${bg};display:flex;align-items:center;justify-content:center;font-size:1.2rem;">🏢</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
@@ -1323,6 +1462,51 @@ function renderPropertyDetail() {
       </div>
     </div>`;
   }).join('');
+
+  // ── Expenses section for this property ────────────────────────────
+  const propExpenses = (data.expenses || []).filter(e => e.propId === propId).sort((a,b) => b.date.localeCompare(a.date));
+  const expTotal = propExpenses.reduce((s,e) => s + e.amount, 0);
+
+  const expRows = propExpenses.length === 0
+    ? `<div style="color:var(--muted);font-size:.82rem;padding:16px;text-align:center;">No expenses recorded yet.</div>`
+    : propExpenses.map(e => `
+      <tr>
+        <td>${fmtDate(e.date)}</td>
+        <td>${e.category}</td>
+        <td>${e.desc || '—'}</td>
+        <td>${e.vendor || '—'}</td>
+        <td style="font-weight:600;color:var(--red);">${fmtMoney(e.amount)}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="deleteExpenseFromDetail('${e.id}')">✕</button></td>
+      </tr>`).join('');
+
+  container.innerHTML += `
+    <div class="card" style="margin-top:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;">Expenses</div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:2px;">Total: <strong style="color:var(--red);">${fmtMoney(expTotal)}</strong></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openAddExpenseForProp('${propId}')">+ Add Expense</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th>Amount</th><th></th></tr></thead>
+          <tbody>${expRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+function openAddExpenseForProp(propId) {
+  populateSelects();
+  const sel = document.getElementById('exp-prop');
+  if (sel && propId) sel.value = propId;
+  document.getElementById('modal-add-expense').classList.add('open');
+}
+
+function deleteExpenseFromDetail(id) {
+  if (!confirm('Delete this expense?')) return;
+  data.expenses = data.expenses.filter(e => e.id !== id);
+  save(); renderAll(); renderPropertyDetail();
 }
 
 function openEditTenant(id) {
@@ -1565,8 +1749,7 @@ function renderRent() {
   );
 
   container.innerHTML = allTenants.map(({ t, prop }) => {
-    const addrCode = prop.address.match(/\d+/) ? prop.address.match(/\d+/)[0] : prop.name.split(" ")[0];
-    const shortCode = addrCode + "-" + t.unit.replace(/[^\d\w]/g, "");
+    const shortCode = t.unit;
 
     let unitTotal = 0;
     for (let m = 0; m < 12; m++) {
